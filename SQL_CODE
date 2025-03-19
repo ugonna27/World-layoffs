@@ -1,0 +1,286 @@
+-- The aim of this project is to perform Exploratory Data Analysis on the World Layoffs data. This dataset contains data on layoffs during the Covid era. Companies laid off scores of their staff and this project is a step to look into the data and explore aspects of it.
+
+--I downloaded the dataset from Kaggle and imported into Microsoft SQL Server; created a Database for it and imported the data into the tables of the database. The database is called 'World_Layoffs'. The Table is called dbo.layoffs.
+
+-- I created a backup table where I will actully perform the data cleaning and the reason is because incase I make a mistake I can always have the original table to go back to. The backup table is called layoffs_staging
+
+select * into dbo.layoffs_staging from layoffs
+
+-- I started by cleaning the data; this is a process to get data in a more usable format after fixing the issues with it. I focus on 3 steps in cleaning: 
+--Remove Duplicates
+--Standardize the data
+--Handle the Null values or blank values
+
+-- Next I'll work to remove the duplicates; normally this is made easy with an Id column but since there's none in this dataset I'll create one using ROW_NUM and PARTITION BY
+
+Select 
+company, industry, total_laid_off, percentage_laid_off,date
+,ROW_NUMBER() OVER(PARTITION BY company, industry, total_laid_off, percentage_laid_off, date ORDER BY company) as row_num 
+from 
+layoffs_staging
+
+
+
+-- Next I'll use a CTE to retrieve the rows with duplicates if any
+
+WITH CTE_duplicate AS
+(
+Select 
+company, industry, CAST(date AS date) as date_layoff, country,stage,location,funds_raised_millions
+,ROW_NUMBER() OVER(
+PARTITION BY company, industry, date ORDER BY company) as row_num 
+from 
+layoffs_staging
+)
+Select *
+from CTE_duplicate
+WHERE row_num > 1
+
+-- Checking Duplicate entries to confirm that they are indeed duplicates and not just different entries in the table.
+Select *
+from layoffs_staging
+WHERE company = 'Bybit' -
+
+Select *
+from layoffs_staging
+WHERE company = 'Bustle Digital Group'
+
+-- Having identified the rows with duplicates we go ahead to UPDATE some information about them. From some research I found that some companies did have multiple layoffs, I also found some missing information on the data like the total number of people laid off and will now go ahead and update the data before I delete the duplicate entries. Some I had to update the dates to the correct dates and this is to enable me get better results in a Time Series Analysis.
+
+UPDATE layoffs_staging
+SET total_laid_off = 21
+WHERE company = 'Bustle Digital Group'
+AND total_laid_off IS NULL
+
+UPDATE layoffs_staging
+SET total_laid_off = 250
+WHERE company = 'Bybit'
+AND date = '2022-06-20'
+
+UPDATE layoffs_staging
+SET date = '2022-10-12'
+WHERE company = 'Sendy'
+AND total_laid_off = 54
+
+UPDATE layoffs_staging
+SET date = '2022-09-12'
+WHERE company = 'IronNet'
+AND total_laid_off = 90 
+
+UPDATE layoffs_staging
+SET date = '2022-11-02'
+WHERE company = 'StockX'
+AND total_laid_off = 80 
+
+-- Since we won't be deleting using CTEs we'll go ahead and delete using the Delete statement. I am deleting the remaining records that are not useful after the update.
+
+DELETE
+from layoffs_staging
+WHERE company = 'ClearCo' 
+AND total_laid_off IS NULL
+
+DELETE
+from layoffs_staging
+WHERE company = 'Terminus' 
+
+DELETE
+from layoffs_staging
+WHERE company = 'Bustle Digital Group' 
+AND total_laid_off = 19
+
+DELETE
+from layoffs_staging
+WHERE company = 'Oda' 
+AND funds_raised_millions = 377
+OR funds_raised_millions = 477
+
+DELETE
+from layoffs_staging
+WHERE company = 'Bybit' 
+AND total_laid_off = 250
+AND date = '2022-06-20'
+
+-- Next we'll look at STANDARDIZING THE DATA in the columns; THAT IS finding issues with your data and fixing it, e.g white spaces around names etc.
+--To begin we'll look at the distinct values in each columns.
+Select
+DISTINCT(company)
+from
+layoffs_staging
+
+-- When we run the code above we find that there are white spaces around some company names so we trim them
+Select 
+DISTINCT(TRIM(company))
+from layoffs_staging
+
+-- Next we check the industry column
+Select 
+DISTINCT(industry)
+from layoffs_staging
+order by 1
+
+--When we run the code above we find that Crypto has 3 different entry names; some as CryptoCurrency, some as Crypto and some as Crypto Currency
+Select *
+from layoffs_staging
+where industry LIKE 'Crypto%' OR
+industry LIKE 'Crypto currency%'
+
+-- Next let's update the industry name; some places where it says CryptoCurrency we want to change them to be Crypto so its uniform with the rest
+
+UPDATE layoffs_staging2
+SET industry = 'Crypto'
+WHERE industry like 'Crypto%' OR
+industry LIKE 'Crypto currency%'
+
+Select 
+DISTINCT(location)
+from layoffs_staging
+
+--location column is fine
+Select 
+DISTINCT(country)
+from layoffs_staging
+
+-- The country column from the code above, has some entries for United States with a . at the end
+Select *
+from layoffs_staging
+where country LIKE 'United States.%'
+
+UPDATE layoffs_staging
+SET country = 'United States'
+WHERE country like 'United States.%'
+
+-- ANALYSING NULL VALUES IN DATA
+-- I decided to check for null values in the numeric columns, which are also very important for this analysis: the total_laid_off column and the percentage_laid_off
+
+Select *
+from layoffs_staging
+WHERE percentage_laid_off IS NULL
+AND total_laid_off IS NULL 
+
+-- Running the above code I discovered that I couldnt query the percentage_laid_off column to get the null values and after some checks I discovered that the column is imported as NVARCHAR and NOT a Numeric column. As a solution I had to use the Try_Convert function and insert the new percentage_laid_off column with Float Data Type into another table with the other columns and I got rid off the percentage_laid_off column with NVARCHAR datatype. Done using CTE function
+
+WITH CTE_percfloat as
+(
+Select 	
+company
+,location
+,industry
+,total_laid_off
+,date
+,stage
+,country
+,funds_raised_millions
+,TRY_CONVERT (FLOAT, [percentage_laid_off]) AS Perc_layoff_float
+from layoffs_staging
+)
+Select *
+into layoffs_staging2
+from CTE_percfloat
+
+Select *
+from layoffs_staging2
+order by company
+
+-- We see that the perc_layoff_float now has NULL values highlighted
+Select *
+from layoffs_staging2
+WHERE total_laid_off is null 
+AND Perc_layoff_float is null
+
+-- From the code above, over 350 records have both columns as NULLS, since this is quite useless to us, I will delete these null records.
+
+DELETE
+from layoffs_staging2
+WHERE total_laid_off is null 
+AND Perc_layoff_float is null
+
+-- I WILL DROP THE layoffs_staging table
+
+DROP TABLE layoffs_staging
+
+-- NOW I WILL DO SOME EXPLORATORY ANALYSIS ON THE DATA
+
+SELECT
+Max(total_laid_off), MAX(percentage_laid_off)
+FROM layoffs_staging2
+
+-- So, 12000 people were laid off in one go. 1% means the entire workforce was let go i.e company went under
+
+-- Let's take a look at companies that laid off their entire workforce AND let's look at the funding that they had
+SELECT *
+FROM layoffs_staging2
+WHERE Perc_layoff_float = 1
+ORDER BY funds_raised_millions DESC
+
+-- It seems from the data that there were companies in different industries that had a billion dollar funding that ceased operations; from Transportation, to Media, to Food, to Construction and Crypto
+
+-- Given that some companies had multiple layoffs, let's take a look at the SUM of layoffs
+
+SELECT
+company, SUM(total_laid_off)
+FROM layoffs_staging2
+GROUP BY company
+ORDER BY 2 DESC
+
+--From the result of this query we see that the large companies had the most layoffs; Amazon, Google, Meta, Salesforce Microsoft etc and this is not so surprising given their size.
+
+-- Industries that were hit the most
+
+SELECT industry, SUM(total_laid_off)
+FROM layoffs_staging2
+GROUP BY industry
+ORDER BY 2 DESC
+
+SELECT industry, SUM(total_laid_off)
+FROM layoffs_staging2
+GROUP BY industry
+ORDER BY 2 DESC
+
+-- Consumer, Retail and Transporation, Finance, Healthcare and Food were the most hit; which makes sense because Covid restricted people from large gatherings and the lowest industries hit being Manufacturing, Fintech, Aerospace, Energy.
+
+-- Countries that were the most hit.
+
+SELECT country, SUM(total_laid_off)
+FROM layoffs_staging2
+GROUP BY country
+ORDER BY 2 DESC
+
+-- The United States, India, Netherlands, Sweden and Brazil had very high numbers with the US topping the list of layoffs in the 4 year period of 2020 - 2023
+
+-- AN ANALYSIS OF THE LAYOFFS BY YEAR
+
+SELECT YEAR(date), SUM(total_laid_off)
+FROM layoffs_staging2
+GROUP BY YEAR(date)
+ORDER BY 1 DESC
+
+--2022 going into 2023 the layoffs was really ramping up at the height of Covid.
+
+-- Another aspect to explore would be the stages of the companies with the layoffs
+
+SELECT stage, SUM(total_laid_off)
+FROM layoffs_staging2
+GROUP BY stage
+ORDER BY 2 DESC
+
+-- Data above is consistent with the data on sum of total layoffs by company because in this data the Post-IPO companies- Amazon, Google, Microsoft, Salesforce also have the highest numbers.
+
+-- A time progression on the layoffs.
+-- In order to use the SUBSTRING function to get the month from date to do a rolling total based on month, I had to change the date column datatype from datetime to VARCHAR
+
+WITH Rolling_Total AS
+(
+SELECT
+SUBSTRING(CONVERT(VARCHAR, date, 102), 1, 7) as monthh
+,SUM(total_laid_off) as total_layoff
+FROM layoffs_staging2
+WHERE SUBSTRING(CONVERT(VARCHAR, date, 102), 1, 7) IS NOT NULL
+GROUP BY SUBSTRING(CONVERT(VARCHAR, date, 102), 1, 7)
+--ORDER BY monthh ASC
+)
+SELECT
+monthh, total_layoff 
+,SUM(total_layoff) OVER(ORDER BY monthh) as rolling_total
+FROM Rolling_Total
+
+-- From the above we see that by March 2020 over 9,000 people lost their jobs, by the end of 2020 we have over 81,000 people. By the end of the following year, 2021, we had over 96,000 people which is not as bad compared to the numbers in 2022. By the end of 2022 more than 258,000 people were out of jobs and that number kept increasing through the beginning of 2023 to 385,741 as at March.
