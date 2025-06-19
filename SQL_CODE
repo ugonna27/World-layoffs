@@ -19,8 +19,6 @@ company, industry, total_laid_off, percentage_laid_off,date
 from 
 layoffs_staging
 
-
-
 -- Next I'll use a CTE to retrieve the rows with duplicates if any
 
 WITH CTE_duplicate AS
