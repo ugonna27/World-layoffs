@@ -155,7 +155,9 @@ from layoffs_staging
 WHERE percentage_laid_off IS NULL
 AND total_laid_off IS NULL 
 
--- Running the above code I discovered that I couldnt query the percentage_laid_off column to get the null values and after some checks I discovered that the column is imported as NVARCHAR and NOT a Numeric column. As a solution I had to use the Try_Convert function and insert the new percentage_laid_off column with Float Data Type into another table with the other columns and I got rid off the percentage_laid_off column with NVARCHAR datatype. Done using CTE function
+-- Running the above code I discovered that I couldnt query the percentage_laid_off column to get the null values and after some checks I discovered that the column is 
+-- imported as NVARCHAR and NOT a Numeric column. As a solution I had to use the Try_Convert function and insert the new percentage_laid_off column with Float Data Type 
+-- into another table with the other columns and I got rid off the percentage_laid_off column with NVARCHAR datatype. Done using CTE function
 
 WITH CTE_percfloat as
 (
